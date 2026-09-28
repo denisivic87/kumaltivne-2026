@@ -41,7 +41,7 @@
 
 /* Print styles */
 @media print {
-  body {
+body {
     -webkit-print-color-adjust: exact;
     color-adjust: exact;
   }
