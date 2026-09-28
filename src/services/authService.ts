@@ -17,8 +17,41 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
   return profile;
 }
 
+/**
+ * Odjava korisnika.
+ * 
+ * Vraćen je čist i robustan poziv Supabase odjave bez blokiranja globalnih događaja,
+ * čime omogućavamo stabilan SIGNED_OUT trigering u App.tsx.
+ */
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+  console.log('🔐 authService.signOut() — start');
+
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('❌ SignOut error:', error);
+      throw error;
+    }
+    console.log('✅ SignOut uspješan — sesija obrisana');
+  } catch (err) {
+    console.error('❌ SignOut pao, čišćenje lokalnog skladišta:', err);
+    // Fallback: ručno brisanje Supabase ključeva iz localStorage
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      console.log(`🗑️ Ručno obrisano ${keysToRemove.length} Supabase ključeva`);
+    } catch (cleanupErr) {
+      console.error('❌ localStorage cleanup pao:', cleanupErr);
+    }
+  }
+
+  console.log('🔐 authService.signOut() — kraj');
 }
 
 export async function getSession() {
@@ -45,7 +78,7 @@ export async function fetchUserProfile(authUserId: string): Promise<AuthUser | n
     role: data.role || 'user',
     status: data.status || 'active',
     created_at: data.created_at,
-    pdf_display_name: data.pdf_display_name || undefined
+    pdf_display_name: data.pdf_display_name || undefined,
   };
 }
 
