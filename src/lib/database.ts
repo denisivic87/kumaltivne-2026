@@ -85,7 +85,7 @@ function mapDbRecordToRecord(dbRecord: DatabaseRecord): Record {
       economic_classification_code: dbRecord.record_items[0].economic_classification_code,
       source_of_funding_code: dbRecord.record_items[0].source_of_funding_code,
       function_code: dbRecord.record_items[0].function_code,
-      amount: parseFloat(dbRecord.record_items[0].amount),
+      amount: parseFloat(String(dbRecord.record_items[0].amount)) || 0,
       recording_account: dbRecord.record_items[0].recording_account,
       expected_payment_date: dbRecord.record_items[0].expected_payment_date,
       urgent_payment: dbRecord.record_items[0].urgent_payment,
@@ -203,7 +203,6 @@ export async function saveRecordToDatabase(
 }
 
 export async function getRecordsFromDatabase(userId: string): Promise<Record[]> {
-  // Try embedded select first (faster, single round-trip)
   const { data: recordsData, error: recordsError } = await supabase
     .from('records')
     .select(`*, record_items (*)`)
@@ -214,7 +213,6 @@ export async function getRecordsFromDatabase(userId: string): Promise<Record[]> 
   if (recordsError) throw recordsError;
   if (!recordsData || recordsData.length === 0) return [];
 
-  // Check if items were loaded — if not, fetch separately (RLS timing workaround)
   const hasAnyItems = recordsData.some(
     (r: any) => r.record_items && r.record_items.length > 0
   );
@@ -223,7 +221,6 @@ export async function getRecordsFromDatabase(userId: string): Promise<Record[]> 
     return recordsData.map(mapDbRecordToRecord);
   }
 
-  // Fallback: fetch record_items separately
   const recordIds = recordsData.map((r: any) => r.id);
   const { data: itemsData, error: itemsError } = await supabase
     .from('record_items')
@@ -274,28 +271,26 @@ export async function updateRecordInDatabase(recordId: string, record: Record): 
 
   if (recordError) throw recordError;
 
-  // Only update items if they have actual data (prevent overwriting with empty defaults)
-  if (record.item.amount > 0 || record.item.program_code || record.item.budget_user_id) {
-    const { error: itemError } = await supabase
-      .from('record_items')
-      .update({
-        budget_user_id: record.item.budget_user_id,
-        program_code: record.item.program_code,
-        project_code: record.item.project_code,
-        economic_classification_code: record.item.economic_classification_code,
-        source_of_funding_code: record.item.source_of_funding_code,
-        function_code: record.item.function_code,
-        amount: record.item.amount,
-        recording_account: record.item.recording_account,
-        expected_payment_date: record.item.expected_payment_date,
-        urgent_payment: record.item.urgent_payment,
-        posting_account: record.item.posting_account,
-        updated_at: new Date().toISOString()
-      })
-      .eq('record_id', recordId);
+  // Uklonjen restriktivni if uslov — sada se item uvijek ažurira ispravno, uključujući i nulte iznose
+  const { error: itemError } = await supabase
+    .from('record_items')
+    .update({
+      budget_user_id: record.item.budget_user_id,
+      program_code: record.item.program_code,
+      project_code: record.item.project_code,
+      economic_classification_code: record.item.economic_classification_code,
+      source_of_funding_code: record.item.source_of_funding_code,
+      function_code: record.item.function_code,
+      amount: record.item.amount,
+      recording_account: record.item.recording_account,
+      expected_payment_date: record.item.expected_payment_date,
+      urgent_payment: record.item.urgent_payment,
+      posting_account: record.item.posting_account,
+      updated_at: new Date().toISOString()
+    })
+    .eq('record_id', recordId);
 
-    if (itemError) throw itemError;
-  }
+  if (itemError) throw itemError;
 }
 
 export async function upsertRecordsBatch(
@@ -307,7 +302,6 @@ export async function upsertRecordsBatch(
 
   const now = new Date().toISOString();
 
-  // Upsert all records in one query using ON CONFLICT
   const recordRows = records.map(r => ({
     id: r.id,
     user_id: userId,
@@ -338,25 +332,22 @@ export async function upsertRecordsBatch(
 
   if (recErr) throw recErr;
 
-  // Upsert record_items — only include items that actually have data
-  // to prevent overwriting valid DB items with empty/default values
-  const itemRows = records
-    .filter(r => r.item && (r.item.amount > 0 || r.item.program_code || r.item.budget_user_id))
-    .map(r => ({
-      record_id: r.id,
-      budget_user_id: r.item.budget_user_id,
-      program_code: r.item.program_code,
-      project_code: r.item.project_code,
-      economic_classification_code: r.item.economic_classification_code,
-      source_of_funding_code: r.item.source_of_funding_code,
-      function_code: r.item.function_code,
-      amount: r.item.amount,
-      recording_account: r.item.recording_account,
-      expected_payment_date: r.item.expected_payment_date,
-      urgent_payment: r.item.urgent_payment,
-      posting_account: r.item.posting_account,
-      updated_at: now,
-    }));
+  // Uklonjen restriktivni filter — svi validni itemi se sinhronizuju bez preskakanja
+  const itemRows = records.map(r => ({
+    record_id: r.id,
+    budget_user_id: r.item.budget_user_id,
+    program_code: r.item.program_code,
+    project_code: r.item.project_code,
+    economic_classification_code: r.item.economic_classification_code,
+    source_of_funding_code: r.item.source_of_funding_code,
+    function_code: r.item.function_code,
+    amount: r.item.amount,
+    recording_account: r.item.recording_account,
+    expected_payment_date: r.item.expected_payment_date,
+    urgent_payment: r.item.urgent_payment,
+    posting_account: r.item.posting_account,
+    updated_at: now,
+  }));
 
   if (itemRows.length > 0) {
     const { error: itemErr } = await supabase
@@ -366,8 +357,6 @@ export async function upsertRecordsBatch(
     if (itemErr) throw itemErr;
   }
 }
-
-// ---- Snapshot (history) functions ----
 
 export interface Snapshot {
   id: string;
@@ -473,11 +462,10 @@ export function subscribeToUserRecords(
 
   const handleChange = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
-    // Debounce so that record_items upsert finishes before we re-fetch
     debounceTimer = setTimeout(async () => {
       const updated = await getRecordsFromDatabase(userId);
       onChange(updated);
-    }, 2000);
+    }, 1500);
   };
 
   const channel = supabase
@@ -488,11 +476,6 @@ export function subscribeToUserRecords(
       handleChange
     )
     .subscribe();
-    // record_items changes are captured indirectly: when record_items change the
-    // debounced getRecordsFromDatabase re-fetch (triggered by the records subscription
-    // or by direct poll after upsert) picks them up. We intentionally do NOT subscribe
-    // to record_items here because Supabase realtime cannot filter record_items by
-    // user_id (it has no user_id column), which would fire for every user's writes.
 
   return () => {
     if (debounceTimer) clearTimeout(debounceTimer);
