@@ -37,10 +37,8 @@ export const generateXML = (header: Header, records: Record[]): string => {
 
     const cleanInvoiceNumber = sanitizeInvoiceNumber(record.invoice_number);
 
-    // Normalize all three dates to YYYY-MM-DD.
-    // due_date is set equal to expected_payment_date so SPIRI never rejects
-    // the record for expected_payment_date > due_date.
     const expectedPaymentDate = formatDateForXML(sanitizeString(record.item.expected_payment_date));
+    const dueDate = formatDateForXML(sanitizeString(record.due_date));
 
     return {
       ...record,
@@ -52,7 +50,7 @@ export const generateXML = (header: Header, records: Record[]): string => {
       account_number: sanitizeString(record.account_number),
       invoice_type: sanitizeString(record.invoice_type),
       invoice_date: formatDateForXML(sanitizeString(record.invoice_date)),
-      due_date: expectedPaymentDate,
+      due_date: dueDate, // Zadržava se originalni datum dospeća koji je unio korisnik
       contract_number: sanitizeString(record.contract_number),
       payment_code: sanitizeString(record.payment_code),
       credit_model: sanitizeString(record.credit_model),
