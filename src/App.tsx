@@ -558,11 +558,35 @@ function App() {
     });
   }, []);
 
+  const sanitizeDate = (val: string): string => {
+    if (!val) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const stripped = val.trim().replace(/\.$/, '');
+    const parts = stripped.split('.');
+    if (parts.length === 3) {
+      const day = parts[0].trim().padStart(2, '0');
+      const month = parts[1].trim().padStart(2, '0');
+      const year = parts[2].trim();
+      if (year.length === 4) return `${year}-${month}-${day}`;
+    }
+    return val;
+  };
+
   const updateRecord = (_index: number, updatedRecord: Record) => {
+    const sanitizedRecord = {
+      ...updatedRecord,
+      invoice_date: sanitizeDate(updatedRecord.invoice_date),
+      due_date: sanitizeDate(updatedRecord.due_date),
+      item: {
+        ...updatedRecord.item,
+        expected_payment_date: sanitizeDate(updatedRecord.item.expected_payment_date)
+      }
+    };
+
     const newAllRecords = [...allRecords];
-    const actualIndex = allRecords.findIndex(r => r.id === updatedRecord.id);
+    const actualIndex = allRecords.findIndex(r => r.id === sanitizedRecord.id);
     if (actualIndex >= 0) {
-      newAllRecords[actualIndex] = updatedRecord;
+      newAllRecords[actualIndex] = sanitizedRecord;
       const sorted = sortRecordsBySequence(newAllRecords);
       setAllRecords(sorted);
       setRecords(searchQuery ? filterRecords(sorted, searchQuery) : sorted);
@@ -816,7 +840,7 @@ function App() {
       <div class="stat"><label>Ukupan iznos</label><span>${fmtAmount(totalAmount)} ${escapeHtml(header.currency_code)}</span></div>
     </div>
 
-    ${authState.user ? `<div class="footer">Generisao: ${escapeHtml(authState.user.username)} | ${escapeHtml(new Date().toLocaleString('sr-RS'))}</div>` : ''}
+    ${authState.user ? `<div class="footer">Generisao: ${escapeHtml(authState.user.username)} \vert{}${escapeHtml(new Date().toLocaleString('sr-RS'))}</div>` : ''}
   </div>
 
   <div class="no-print">
